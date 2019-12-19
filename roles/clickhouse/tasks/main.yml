@@ -1,0 +1,76 @@
+- name: Install by APT | Apt-key add repo key
+  apt_key:
+    keyserver: "{{ clickhouse_repo_keyserver }}"
+    id: "{{ clickhouse_repo_key }}"
+  become: true
+  tags: [install]
+
+- name: Install by APT | Remove old repo link of exists
+  apt_repository:
+    repo: "{{ clickhouse_repo_old }}"
+    state: absent
+  become: true
+  when: clickhouse_repo_old is defined
+  tags: [install]
+
+- name: Install by APT | Repo installation
+  apt_repository:
+    repo: "{{ clickhouse_repo }}"
+    state: present
+  become: true
+  tags: [install]
+
+- name: Install by APT | Package installation
+  apt:
+    name: "{{ item }}={{ clickhouse_version }}"
+    state: present
+    force: yes
+  with_items: "{{ clickhouse_package }}"
+  become: true
+  tags: [install]
+
+- name: Install pip
+  tags:
+    - install
+  apt:
+    name: python3-pip
+    state: present
+
+- name: Install lxml
+  tags:
+    - install
+  pip:
+    name: lxml
+
+- name: Make servers template to insert
+  tags:
+    - install
+  template:
+    src: clickhouse_remote_servers.xml.j2
+    dest: /etc/clickhouse-server/config.d/config.xml
+- name: dbg
+  debug:
+    msg: "{{ hostvars[item]['ansible_eth0']['ipv4']['address'] }}"
+  with_items: "{{ groups['clickhouse'] }}"
+
+- name: ClickHouse remote servers for config.xml
+  tags:
+    - install
+  xml:
+    path: /etc/clickhouse-server/config.d/config.xml
+    xpath: /yandex/remote_servers/my_cluster
+    input_type: xml
+    add_children:
+      - "<shard>
+        <replica>
+        <host>{{ hostvars[item]['ansible_eth0']['ipv4']['address'] }}</host>
+        <port>9000</port>
+        </replica>
+        </shard>"
+    pretty_print: yes
+  with_items: "{{ groups['clickhouse'] }}"
+
+- name: Launch ClickHouse
+  command: /bin/true
+  notify:
+    - Start ClickHouse

@@ -1,0 +1,101 @@
+
+- name: Install utils
+  tags:
+    - install
+  yum:
+    name: ["yum-utils", "nano"]
+
+- name: Add repository
+  tags:
+    - install
+  yum_repository:
+    name: epel
+    description: EPEL YUM repo
+    baseurl:  https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    gpgcheck: no
+
+- name: Install pip
+  tags:
+    - install
+  yum:
+    name: python-pip
+    state: present
+
+- name: Install lxml
+  tags:
+    - install
+  pip:
+    name: lxml
+
+- name: Add ClickHouse repository
+  tags:
+    - install
+  yum_repository:
+    name: yandex
+    baseurl: "{{ clickhouse_repository }}"
+    gpgcheck: yes
+    description: Yandex Repo
+    gpgkey: https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+
+- name: Install ClickHouse packages
+  tags:
+    - install
+  yum:
+    name: "{{ clickhouse_packages }}"
+
+- name: Make servers template to insert
+  tags:
+    - install
+  template:
+    src: clickhouse_remote_servers.xml.j2
+    dest: /etc/clickhouse-server/config.d/config.xml
+
+#- name: Open ClickHouse port
+#  tags:
+#    - install
+#  xml:
+#    path: /etc/clickhouse-server/config.d/config.xml
+#    xpath: /yandex/listen_host
+#    value: "::"
+#    pretty_print: yes
+
+#- name: Open Tabix interface
+#  tags:
+#    - install
+#  xml:
+#    path: /etc/clickhouse-server/config.d/config.xml
+#    xpath: /yandex/http_server_default_response
+#    value: '<![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>'
+#    pretty_print: yes
+#
+#- name: Remove all children from the remote_servers element
+#  tags:
+#    - install
+#  xml:
+#    path: /etc/clickhouse-server/config.xml
+#    xpath: /yandex/remote_servers
+#    set_children:
+#      - clickhouse_remote_servers
+#    pretty_print: yes
+
+- name: ClickHouse remote servers for config.xml
+  tags:
+    - install
+  xml:
+    path: /etc/clickhouse-server/config.d/config.xml
+    xpath: /yandex/remote_servers/clickhouse_remote_servers
+    input_type: xml
+    add_children:
+      - "<shard>
+        <replica>
+        <host>{{ hostvars[item]['ansible_eth0']['ipv4']['address'] }}</host>
+        <port>9000</port>
+        </replica>
+        </shard>"
+    pretty_print: yes
+  with_items: "{{ groups['clickhouse'] }}"
+
+- name: Launch ClickHouse
+  command: /bin/true
+  notify:
+    - Start ClickHouse
